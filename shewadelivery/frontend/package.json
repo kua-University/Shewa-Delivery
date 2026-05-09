@@ -1,0 +1,139 @@
+ 
+{
+  "name": "shewadelivery-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ShewaDelivery React Frontend - Food Delivery Platform for Ethiopia",
+  "homepage": "https://shewadelivery.com",
+  "author": "ShewaDelivery Team",
+  "license": "MIT",
+  "dependencies": {
+    "@reduxjs/toolkit": "^1.9.7",
+    "axios": "^1.6.2",
+    "localforage": "^1.10.0",
+    "lottie-react": "^2.4.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-i18next": "^13.5.0",
+    "react-intersection-observer": "^9.5.3",
+    "react-router-dom": "^6.20.0",
+    "react-scripts": "5.0.1",
+    "uuid": "^9.0.1",
+    "web-vitals": "^3.5.0"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.1.5",
+    "@testing-library/react": "^14.1.2",
+    "@testing-library/user-event": "^14.5.1",
+    "eslint": "^8.54.0",
+    "eslint-config-react-app": "^7.0.1",
+    "eslint-plugin-react": "^7.33.2",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "husky": "^8.0.3",
+    "lint-staged": "^15.1.0",
+    "prettier": "^3.1.0",
+    "imagemin-cli": "^7.0.0",
+    "source-map-explorer": "^2.5.3",
+    "serve": "^14.2.1"
+  },
+  "scripts": {
+    "start": "react-scripts start",
+    "start:dev": "REACT_APP_ENVIRONMENT=development react-scripts start",
+    "start:staging": "REACT_APP_ENVIRONMENT=staging react-scripts start",
+    "build": "react-scripts build",
+    "build:dev": "REACT_APP_ENVIRONMENT=development react-scripts build",
+    "build:staging": "REACT_APP_ENVIRONMENT=staging react-scripts build",
+    "build:production": "REACT_APP_ENVIRONMENT=production react-scripts build",
+    "build:optimized": "GENERATE_SOURCEMAP=false react-scripts build",
+    "build:analyze": "GENERATE_SOURCEMAP=true react-scripts build && npm run analyze",
+    "build:docker": "npm run build:production && docker build -t shewadelivery-frontend .",
+    "optimize:assets": "imagemin 'build/static/media/*.{jpg,png,svg,gif}' --out-dir='build/static/media'",
+    "optimize:js": "npm run build:optimized && npm run optimize:assets",
+    "analyze": "source-map-explorer 'build/static/js/*.js' --html build/bundle-analysis.html",
+    "analyze:open": "npm run analyze && open build/bundle-analysis.html",
+    "preview": "serve -s build -l 3000",
+    "preview:prod": "serve -s build -l 8080 --single",
+    "test": "react-scripts test",
+    "test:watch": "react-scripts test --watch",
+    "test:coverage": "react-scripts test --coverage --watchAll=false",
+    "test:ci": "CI=true react-scripts test --coverage --watchAll=false",
+    "eject": "react-scripts eject",
+    "lint": "eslint src/ --ext .js,.jsx",
+    "lint:fix": "eslint src/ --ext .js,.jsx --fix",
+    "lint:strict": "eslint src/ --ext .js,.jsx --max-warnings 0",
+    "format": "prettier --write \"src/**/*.{js,jsx,css,md,json}\"",
+    "format:check": "prettier --check \"src/**/*.{js,jsx,css,md,json}\"",
+    "clean": "rm -rf build/ node_modules/.cache",
+    "clean:all": "rm -rf build/ node_modules/ package-lock.json && npm install",
+    "docker:build": "docker build -t shewadelivery-frontend:latest .",
+    "docker:build:version": "docker build -t shewadelivery-frontend:${npm_package_version} -t shewadelivery-frontend:latest .",
+    "docker:run": "docker run -p 3000:80 shewadelivery-frontend:latest",
+    "docker:run:prod": "docker run -d -p 8080:80 --name shewa-frontend shewadelivery-frontend:latest",
+    "docker:stop": "docker stop shewa-frontend && docker rm shewa-frontend",
+    "docker:push": "docker push shewadelivery-frontend:latest",
+    "deploy:netlify": "npm run build:production && netlify deploy --prod --dir=build",
+    "deploy:vercel": "npm run build:production && vercel --prod",
+    "precommit": "lint-staged",
+    "prepare": "husky install",
+    "version:patch": "npm version patch -m \"Bump version to %s\"",
+    "version:minor": "npm version minor -m \"Bump version to %s\"",
+    "version:major": "npm version major -m \"Bump version to %s\"",
+    "release": "npm run test:ci && npm run build:production && npm run version:patch",
+    "postinstall": "npm run build"
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all",
+      "last 2 versions",
+      "android >= 4.4",
+      "ios >= 11",
+      "chrome >= 49",
+      "firefox >= 52",
+      "safari >= 12"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "proxy": "http://localhost:3000",
+  "eslintConfig": {
+    "extends": [
+      "react-app"
+    ],
+    "rules": {
+      "react-hooks/exhaustive-deps": "warn",
+      "no-console": "warn",
+      "no-debugger": "error"
+    }
+  },
+  "lint-staged": {
+    "*.{js,jsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{css,md,json}": [
+      "prettier --write"
+    ]
+  },
+  "jest": {
+    "coverageThreshold": {
+      "global": {
+        "branches": 70,
+        "functions": 70,
+        "lines": 70,
+        "statements": 70
+      }
+    },
+    "collectCoverageFrom": [
+      "src/**/*.{js,jsx}",
+      "!src/**/*.test.{js,jsx}",
+      "!src/index.js",
+      "!src/serviceWorkerRegistration.js",
+      "!src/reportWebVitals.js"
+    ]
+  }
+}

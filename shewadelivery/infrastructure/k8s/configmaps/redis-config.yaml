@@ -1,0 +1,19 @@
+ 
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-config
+  namespace: shewadelivery
+data:
+  redis.conf: |
+    # Redis configuration for ShewaDelivery
+    maxmemory 512mb
+    maxmemory-policy allkeys-lru
+    save 900 1
+    save 300 10
+    save 60 10000
+    appendonly yes
+    appendfsync everysec
+    tcp-keepalive 300
+    timeout 300
+    tcp-backlog 511

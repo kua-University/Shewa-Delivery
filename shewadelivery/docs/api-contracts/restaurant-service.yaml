@@ -1,0 +1,524 @@
+ 
+# docs/api-contracts/restaurant-service.yaml
+openapi: 3.0.3
+info:
+  title: ShewaDelivery Restaurant Service API
+  description: Restaurant management service for ShewaDelivery platform
+  version: 1.0.0
+
+servers:
+  - url: https://api.shewadelivery.com/restaurant-service
+    description: Production server
+  - url: http://localhost:3002
+    description: Local development
+
+tags:
+  - name: restaurants
+    description: Restaurant management
+  - name: menu
+    description: Menu management
+  - name: categories
+    description: Cuisine and city categories
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Restaurant:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        cuisine:
+          type: array
+          items:
+            type: string
+        city:
+          type: string
+        address:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+          format: email
+        imageUrl:
+          type: string
+          format: uri
+        deliveryFee:
+          type: number
+          format: decimal
+        minimumOrder:
+          type: number
+          format: decimal
+        estimatedDeliveryTime:
+          type: integer
+        isOpen:
+          type: boolean
+        rating:
+          type: number
+          format: decimal
+          minimum: 0
+          maximum: 5
+        totalRatings:
+          type: integer
+        openingHours:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              open:
+                type: string
+              close:
+                type: string
+        location:
+          type: object
+          properties:
+            lat:
+              type: number
+              format: float
+            lng:
+              type: number
+              format: float
+
+    MenuItem:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+          format: decimal
+        category:
+          type: string
+        imageUrl:
+          type: string
+          format: uri
+        isAvailable:
+          type: boolean
+        isPopular:
+          type: boolean
+        preparationTime:
+          type: integer
+        dietaryInfo:
+          type: object
+          properties:
+            vegetarian:
+              type: boolean
+            vegan:
+              type: boolean
+            glutenFree:
+              type: boolean
+            spicy:
+              type: boolean
+
+    CreateRestaurantRequest:
+      type: object
+      required:
+        - name
+        - phone
+        - address
+        - city
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+        description:
+          type: string
+          maxLength: 1000
+        cuisine:
+          type: array
+          items:
+            type: string
+        city:
+          type: string
+        address:
+          type: string
+        phone:
+          type: string
+          pattern: '^(\+251|0)[0-9]{9}$'
+        email:
+          type: string
+          format: email
+        deliveryFee:
+          type: number
+          default: 30
+        minimumOrder:
+          type: number
+          default: 50
+        estimatedDeliveryTime:
+          type: integer
+          default: 45
+
+  parameters:
+    restaurantIdParam:
+      name: restaurantId
+      in: path
+      required: true
+      schema:
+        type: integer
+    menuItemIdParam:
+      name: itemId
+      in: path
+      required: true
+      schema:
+        type: string
+
+security:
+  - bearerAuth: []
+
+paths:
+  /restaurants:
+    get:
+      summary: Get all restaurants
+      description: Returns paginated list of restaurants (ASR-02: Cached response)
+      tags: [restaurants]
+      operationId: getAllRestaurants
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+        - name: city
+          in: query
+          schema:
+            type: string
+          description: Filter by city
+        - name: cuisine
+          in: query
+          schema:
+            type: string
+          description: Filter by cuisine type
+        - name: minRating
+          in: query
+          schema:
+            type: number
+            minimum: 0
+            maximum: 5
+        - name: isOpen
+          in: query
+          schema:
+            type: boolean
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of restaurants
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Restaurant'
+                  pagination:
+                    type: object
+                  filters:
+                    type: object
+
+    post:
+      summary: Create restaurant
+      description: Create new restaurant (admin only - ASR-08)
+      tags: [restaurants]
+      operationId: createRestaurant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRestaurantRequest'
+      responses:
+        '201':
+          description: Restaurant created
+        '400':
+          description: Invalid input
+        '409':
+          description: Restaurant already exists
+
+  /restaurants/{restaurantId}:
+    get:
+      summary: Get restaurant by ID
+      tags: [restaurants]
+      operationId: getRestaurantById
+      parameters:
+        - $ref: '#/components/parameters/restaurantIdParam'
+        - name: includeMenu
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Restaurant details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/Restaurant'
+        '404':
+          description: Restaurant not found
+
+    put:
+      summary: Update restaurant
+      tags: [restaurants]
+      operationId: updateRestaurant
+      parameters:
+        - $ref: '#/components/parameters/restaurantIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                phone:
+                  type: string
+                deliveryFee:
+                  type: number
+                isOpen:
+                  type: boolean
+      responses:
+        '200':
+          description: Restaurant updated
+        '404':
+          description: Restaurant not found
+
+  /restaurants/{restaurantId}/menu:
+    get:
+      summary: Get restaurant menu
+      description: Returns menu items with caching (ASR-02)
+      tags: [menu]
+      operationId: getRestaurantMenu
+      parameters:
+        - $ref: '#/components/parameters/restaurantIdParam'
+        - name: category
+          in: query
+          schema:
+            type: string
+        - name: isAvailable
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Menu items
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      restaurantId:
+                        type: integer
+                      restaurantName:
+                        type: string
+                      menu:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/MenuItem'
+                      categories:
+                        type: array
+                        items:
+                          type: string
+
+    post:
+      summary: Add menu item
+      tags: [menu]
+      operationId: addMenuItem
+      parameters:
+        - $ref: '#/components/parameters/restaurantIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - price
+                - category
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                price:
+                  type: number
+                  format: decimal
+                category:
+                  type: string
+                imageUrl:
+                  type: string
+                isAvailable:
+                  type: boolean
+                  default: true
+                preparationTime:
+                  type: integer
+                  default: 15
+      responses:
+        '201':
+          description: Menu item added
+
+  /restaurants/{restaurantId}/menu/{itemId}:
+    put:
+      summary: Update menu item
+      tags: [menu]
+      operationId: updateMenuItem
+      parameters:
+        - $ref: '#/components/parameters/restaurantIdParam'
+        - $ref: '#/components/parameters/menuItemIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                price:
+                  type: number
+                isAvailable:
+                  type: boolean
+      responses:
+        '200':
+          description: Menu item updated
+
+    delete:
+      summary: Delete menu item
+      tags: [menu]
+      operationId: deleteMenuItem
+      parameters:
+        - $ref: '#/components/parameters/restaurantIdParam'
+        - $ref: '#/components/parameters/menuItemIdParam'
+      responses:
+        '200':
+          description: Menu item deleted
+        '404':
+          description: Item not found
+
+  /restaurants/search:
+    get:
+      summary: Search restaurants
+      tags: [restaurants]
+      operationId: searchRestaurants
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 2
+        - name: lat
+          in: query
+          schema:
+            type: number
+            format: float
+        - name: lng
+          in: query
+          schema:
+            type: number
+            format: float
+        - name: radius
+          in: query
+          schema:
+            type: integer
+            default: 5
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Restaurant'
+                  query:
+                    type: string
+                  count:
+                    type: integer
+
+  /cuisines:
+    get:
+      summary: Get all cuisines
+      tags: [categories]
+      operationId: getCuisines
+      responses:
+        '200':
+          description: List of cuisines
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      type: string
+
+  /cities:
+    get:
+      summary: Get all cities (ASR-10)
+      tags: [categories]
+      operationId: getCities
+      responses:
+        '200':
+          description: List of cities
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      type: string
+                  count:
+                    type: integer

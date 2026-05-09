@@ -1,0 +1,756 @@
+# docker-compose.yml
+# ShewaDelivery - Complete Docker Compose Configuration
+# Supports both development and production environments
+
+version: '3.8'
+
+# ============================================
+# Networks
+# ============================================
+networks:
+  shewa-network:
+    driver: bridge
+    name: shewa-network
+  
+  monitoring-network:
+    driver: bridge
+    name: monitoring-network
+
+# ============================================
+# Volumes (Persistent Storage)
+# ============================================
+volumes:
+  postgres-data:
+    driver: local
+    name: shewa-postgres-data
+  mongodb-data:
+    driver: local
+    name: shewa-mongodb-data
+  redis-data:
+    driver: local
+    name: shewa-redis-data
+  rabbitmq-data:
+    driver: local
+    name: shewa-rabbitmq-data
+  es-data:
+    driver: local
+    name: shewa-es-data
+  es-logs:
+    driver: local
+    name: shewa-es-logs
+
+# ============================================
+# Services
+# ============================================
+services:
+  # ============================================
+  # API Gateway Service
+  # ============================================
+  api-gateway:
+    build:
+      context: ./backend/api-gateway
+      dockerfile: Dockerfile
+      target: ${BUILD_TARGET:-development}
+    container_name: shewa-api-gateway
+    restart: unless-stopped
+    ports:
+      - "${API_GATEWAY_PORT:-3000}:3000"
+      - "9229:9229"  # Debug port
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=3000
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redispass}@redis:6379
+      - RABBITMQ_URL=amqp://${RABBITMQ_USER:-shewa}:${RABBITMQ_PASSWORD:-shewapass}@rabbitmq:5672
+      - JWT_SECRET=${JWT_SECRET:-dev_jwt_secret}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-dev_refresh_secret}
+      - ORDER_SERVICE_URL=http://order-service:3001
+      - PAYMENT_SERVICE_URL=http://payment-service:3003
+      - NOTIFICATION_SERVICE_URL=http://notification-service:3005
+      - DELIVERY_SERVICE_URL=http://delivery-service:3006
+      - RESTAURANT_SERVICE_URL=http://restaurant-service:3002
+      - AUTH_SERVICE_URL=http://auth-service:3004
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - CACHE_TTL_MENU=${CACHE_TTL_MENU:-300}
+      - CACHE_TTL_RESTAURANT_LIST=${CACHE_TTL_RESTAURANT_LIST:-300}
+      - RATE_LIMIT_WINDOW_MS=${RATE_LIMIT_WINDOW_MS:-60000}
+      - RATE_LIMIT_MAX_REQUESTS=${RATE_LIMIT_MAX_REQUESTS:-100}
+    volumes:
+      - ./backend/api-gateway:/app
+      - /app/node_modules
+    depends_on:
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      order-service:
+        condition: service_started
+      payment-service:
+        condition: service_started
+      notification-service:
+        condition: service_started
+      delivery-service:
+        condition: service_started
+      restaurant-service:
+        condition: service_started
+      auth-service:
+        condition: service_started
+    networks:
+      - shewa-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => {r.statusCode === 200 ? process.exit(0) : process.exit(1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api-gateway.rule=Host(`api.shewadelivery.com`)"
+      - "traefik.http.services.api-gateway.loadbalancer.server.port=3000"
+
+  # ============================================
+  # Order Service
+  # ============================================
+  order-service:
+    build:
+      context: ./backend/order-service
+      dockerfile: Dockerfile
+      target: ${BUILD_TARGET:-development}
+    container_name: shewa-order-service
+    restart: unless-stopped
+    ports:
+      - "${ORDER_SERVICE_PORT:-3001}:3001"
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=3001
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=shewadelivery
+      - DB_USER=${DB_USER:-shewa}
+      - DB_PASSWORD=${DB_PASSWORD:-shewapass}
+      - DB_POOL_MAX=20
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redispass}@redis:6379
+      - RABBITMQ_URL=amqp://${RABBITMQ_USER:-shewa}:${RABBITMQ_PASSWORD:-shewapass}@rabbitmq:5672
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      - ./backend/order-service:/app
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - shewa-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3001/health', (r) => {r.statusCode === 200 ? process.exit(0) : process.exit(1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # ============================================
+  # Payment Service
+  # ============================================
+  payment-service:
+    build:
+      context: ./backend/payment-service
+      dockerfile: Dockerfile
+      target: ${BUILD_TARGET:-development}
+    container_name: shewa-payment-service
+    restart: unless-stopped
+    ports:
+      - "${PAYMENT_SERVICE_PORT:-3003}:3003"
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=3003
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=shewadelivery
+      - DB_USER=${DB_USER:-shewa}
+      - DB_PASSWORD=${DB_PASSWORD:-shewapass}
+      - CHAPA_API_KEY=${CHAPA_API_KEY:-test_key}
+      - CHAPA_API_URL=${CHAPA_API_URL:-https://api.chapa.co/v1}
+      - CHAPA_TIMEOUT=10000
+      - CHAPA_WEBHOOK_SECRET=${CHAPA_WEBHOOK_SECRET:-test_webhook_secret}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      - ./backend/payment-service:/app
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - shewa-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3003/health', (r) => {r.statusCode === 200 ? process.exit(0) : process.exit(1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ============================================
+  # Notification Service
+  # ============================================
+  notification-service:
+    build:
+      context: ./backend/notification-service
+      dockerfile: Dockerfile
+      target: ${BUILD_TARGET:-development}
+    container_name: shewa-notification-service
+    restart: unless-stopped
+    ports:
+      - "${NOTIFICATION_SERVICE_PORT:-3005}:3005"
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=3005
+      - RABBITMQ_URL=amqp://${RABBITMQ_USER:-shewa}:${RABBITMQ_PASSWORD:-shewapass}@rabbitmq:5672
+      - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-noreply@shewadelivery.com}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-test}
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID:-test}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN:-test}
+      - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER:-+251900000000}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      - ./backend/notification-service:/app
+      - /app/node_modules
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - shewa-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3005/health', (r) => {r.statusCode === 200 ? process.exit(0) : process.exit(1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============================================
+  # Delivery Service
+  # ============================================
+  delivery-service:
+    build:
+      context: ./backend/delivery-service
+      dockerfile: Dockerfile
+      target: ${BUILD_TARGET:-development}
+    container_name: shewa-delivery-service
+    restart: unless-stopped
+    ports:
+      - "${DELIVERY_SERVICE_PORT:-3006}:3006"
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=3006
+      - MONGODB_URI=mongodb://${MONGODB_USER:-shewa}:${MONGODB_PASSWORD:-shewapass}@mongodb:27017/shewadelivery?authSource=admin
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redispass}@redis:6379
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      - ./backend/delivery-service:/app
+      - /app/node_modules
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - shewa-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3006/health', (r) => {r.statusCode === 200 ? process.exit(0) : process.exit(1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============================================
+  # Restaurant Service
+  # ============================================
+  restaurant-service:
+    build:
+      context: ./backend/restaurant-service
+      dockerfile: Dockerfile
+      target: ${BUILD_TARGET:-development}
+    container_name: shewa-restaurant-service
+    restart: unless-stopped
+    ports:
+      - "${RESTAURANT_SERVICE_PORT:-3002}:3002"
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=3002
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=shewadelivery
+      - DB_USER=${DB_USER:-shewa}
+      - DB_PASSWORD=${DB_PASSWORD:-shewapass}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redispass}@redis:6379
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      - ./backend/restaurant-service:/app
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - shewa-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3002/health', (r) => {r.statusCode === 200 ? process.exit(0) : process.exit(1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============================================
+  # Auth Service
+  # ============================================
+  auth-service:
+    build:
+      context: ./backend/auth-service
+      dockerfile: Dockerfile
+      target: ${BUILD_TARGET:-development}
+    container_name: shewa-auth-service
+    restart: unless-stopped
+    ports:
+      - "${AUTH_SERVICE_PORT:-3004}:3004"
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=3004
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=shewadelivery
+      - DB_USER=${DB_USER:-shewa}
+      - DB_PASSWORD=${DB_PASSWORD:-shewapass}
+      - JWT_SECRET=${JWT_SECRET:-dev_jwt_secret}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-dev_refresh_secret}
+      - JWT_EXPIRY=7d
+      - REFRESH_TOKEN_EXPIRY=30d
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      - ./backend/auth-service:/app
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - shewa-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3004/health', (r) => {r.statusCode === 200 ? process.exit(0) : process.exit(1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============================================
+  # Frontend (React App)
+  # ============================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: ${BUILD_TARGET:-development}
+    container_name: shewa-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+      - "3000:3000"  # React dev server
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - REACT_APP_API_URL=${REACT_APP_API_URL:-http://localhost:3000}
+      - REACT_APP_WS_URL=${REACT_APP_WS_URL:-ws://localhost:3000}
+      - REACT_APP_CHAPA_PUBLIC_KEY=${REACT_APP_CHAPA_PUBLIC_KEY:-test}
+      - REACT_APP_GOOGLE_MAPS_API_KEY=${REACT_APP_GOOGLE_MAPS_API_KEY:-test}
+      - REACT_APP_ENABLE_PWA=true
+      - REACT_APP_ENABLE_OFFLINE_MODE=true
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/build
+    depends_on:
+      - api-gateway
+    networks:
+      - shewa-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============================================
+  # PostgreSQL Database
+  # ============================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: shewa-postgres
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      - POSTGRES_DB=shewadelivery
+      - POSTGRES_USER=${DB_USER:-shewa}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-shewapass}
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./database/migrations:/docker-entrypoint-initdb.d
+    networks:
+      - shewa-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-shewa} -d shewadelivery"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # ============================================
+  # MongoDB for GPS Tracking
+  # ============================================
+  mongodb:
+    image: mongo:7
+    container_name: shewa-mongodb
+    restart: unless-stopped
+    ports:
+      - "${MONGODB_PORT:-27017}:27017"
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGODB_USER:-shewa}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGODB_PASSWORD:-shewapass}
+      - MONGO_INITDB_DATABASE=shewadelivery
+    volumes:
+      - mongodb-data:/data/db
+      - ./database/mongodb/init.js:/docker-entrypoint-initdb.d/init.js
+    networks:
+      - shewa-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    command: ["mongod", "--bind_ip_all", "--wiredTigerCacheSizeGB", "1"]
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+
+  # ============================================
+  # Redis Cache
+  # ============================================
+  redis:
+    image: redis:7-alpine
+    container_name: shewa-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    command: redis-server --requirepass ${REDIS_PASSWORD:-redispass} --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    networks:
+      - shewa-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  # ============================================
+  # RabbitMQ Message Queue
+  # ============================================
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: shewa-rabbitmq
+    restart: unless-stopped
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MGMT_PORT:-15672}:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER:-shewa}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD:-shewapass}
+      - RABBITMQ_ERLANG_COOKIE=${RABBITMQ_COOKIE:-shewa_cookie}
+      - RABBITMQ_VM_MEMORY_HIGH_WATERMARK=0.8
+      - RABBITMQ_DISK_FREE_LIMIT=1GB
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+      - ./infrastructure/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json
+      - ./infrastructure/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf
+    networks:
+      - shewa-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # ============================================
+  # Redis Commander (Redis GUI)
+  # ============================================
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: shewa-redis-commander
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-redispass}
+    depends_on:
+      - redis
+    networks:
+      - shewa-network
+    profiles:
+      - tools
+
+  # ============================================
+  # Mongo Express (MongoDB GUI)
+  # ============================================
+  mongo-express:
+    image: mongo-express:latest
+    container_name: shewa-mongo-express
+    restart: unless-stopped
+    ports:
+      - "8082:8081"
+    environment:
+      - ME_CONFIG_MONGODB_SERVER=mongodb
+      - ME_CONFIG_MONGODB_PORT=27017
+      - ME_CONFIG_MONGODB_ADMINUSERNAME=${MONGODB_USER:-shewa}
+      - ME_CONFIG_MONGODB_ADMINPASSWORD=${MONGODB_PASSWORD:-shewapass}
+      - ME_CONFIG_BASICAUTH_USERNAME=admin
+      - ME_CONFIG_BASICAUTH_PASSWORD=admin123
+    depends_on:
+      - mongodb
+    networks:
+      - shewa-network
+    profiles:
+      - tools
+
+  # ============================================
+  # pgAdmin (PostgreSQL GUI)
+  # ============================================
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: shewa-pgadmin
+    restart: unless-stopped
+    ports:
+      - "5050:80"
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@shewadelivery.com
+      - PGADMIN_DEFAULT_PASSWORD=admin123
+      - PGADMIN_CONFIG_SERVER_MODE=False
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    networks:
+      - shewa-network
+    profiles:
+      - tools
+
+  # ============================================
+  # Prometheus (Metrics Collection)
+  # ============================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: shewa-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infrastructure/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./infrastructure/monitoring/alert.rules:/etc/prometheus/alert.rules
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+    networks:
+      - monitoring-network
+      - shewa-network
+    profiles:
+      - monitoring
+
+  # ============================================
+  # Grafana (Monitoring Dashboard)
+  # ============================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: shewa-grafana
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    volumes:
+      - ./infrastructure/monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./infrastructure/monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - monitoring-network
+      - shewa-network
+    profiles:
+      - monitoring
+
+  # ============================================
+  # Elasticsearch (Logging)
+  # ============================================
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.10.0
+    container_name: shewa-elasticsearch
+    restart: unless-stopped
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+      - cluster.name=shewa-cluster
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+      - es-logs:/usr/share/elasticsearch/logs
+    networks:
+      - monitoring-network
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    profiles:
+      - logging
+
+  # ============================================
+  # Logstash (Log Aggregator)
+  # ============================================
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.10.0
+    container_name: shewa-logstash
+    restart: unless-stopped
+    ports:
+      - "5000:5000/tcp"
+      - "5000:5000/udp"
+      - "5044:5044"
+    volumes:
+      - ./infrastructure/logging/logstash.conf:/usr/share/logstash/pipeline/logstash.conf
+    environment:
+      - LS_JAVA_OPTS=-Xmx512m -Xms512m
+    depends_on:
+      - elasticsearch
+    networks:
+      - monitoring-network
+    profiles:
+      - logging
+
+  # ============================================
+  # Kibana (Log Visualization)
+  # ============================================
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.10.0
+    container_name: shewa-kibana
+    restart: unless-stopped
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    depends_on:
+      - elasticsearch
+    networks:
+      - monitoring-network
+    profiles:
+      - logging
+
+# ============================================
+# Docker Compose Override for Production
+# ============================================
+# To use production settings:
+# docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# To use development with tools:
+# docker-compose --profile tools up -d
+#
+# To use monitoring stack:
+# docker-compose --profile monitoring up -d
+#
+# To use logging stack:
+# docker-compose --profile logging up -d

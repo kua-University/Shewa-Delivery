@@ -1,0 +1,325 @@
+ # .gitignore
+# ShewaDelivery - Git Ignore File
+
+# ============================================
+# Dependencies
+# ============================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ============================================
+# Environment Variables
+# ============================================
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+.env.staging
+.env.*.local
+
+# ============================================
+# Build Outputs
+# ============================================
+dist/
+build/
+out/
+.next/
+.nuxt/
+.cache/
+.parcel-cache/
+
+# Backend builds
+backend/*/dist/
+backend/*/build/
+
+# Frontend builds
+frontend/build/
+frontend/.next/
+
+# ============================================
+# Logs
+# ============================================
+logs/
+*.log
+*.log.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pm2-*.log
+server.log
+
+# ============================================
+# Runtime Data
+# ============================================
+*.pid
+*.seed
+*.pid.lock
+.coverage
+.nyc_output/
+
+# ============================================
+# Coverage Directory
+# ============================================
+coverage/
+*.lcov
+.nyc_output/
+.coveralls.yml
+
+# ============================================
+# IDE / Editor Files
+# ============================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.project
+.classpath
+.settings/
+*.sublime-*
+.editorconfig
+
+# ============================================
+# OS Generated Files
+# ============================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+*.bak
+*.tmp
+
+# ============================================
+# Docker
+# ============================================
+docker-compose.local.yml
+*.tar.gz
+*.dockerignore
+.docker/
+
+# ============================================
+# Kubernetes
+# ============================================
+*.secret.yaml
+*.secrets.yaml
+*.secret.yml
+kubeconfig
+.kubeconfig
+*.kubeconfig
+
+# ============================================
+# Terraform
+# ============================================
+terraform.tfvars
+terraform.tfstate
+terraform.tfstate.*
+.terraform/
+*.tfplan
+*.tfstate.backup
+crash.log
+crash.*.log
+
+# ============================================
+# Certificates / Secrets
+# ============================================
+*.pem
+*.crt
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+.secrets/
+secrets/
+certificates/
+*.secret
+secret.*
+*.private*
+
+# ============================================
+# Testing
+# ============================================
+test-results/
+test-reports/
+junit.xml
+lighthouse-results/
+cypress/videos/
+cypress/screenshots/
+playwright-report/
+
+# ============================================
+# Temporary Files
+# ============================================
+tmp/
+temp/
+*.temp
+*.tmp
+*.cache
+.cache/
+.eslintcache
+.prettiercache
+.stylelintcache
+
+# ============================================
+# Database Files
+# ============================================
+*.sqlite
+*.sqlite3
+*.db
+*.pgsql
+*.mongodb
+dump/
+mongodump/
+
+# ============================================
+# Redis Dump
+# ============================================
+dump.rdb
+appendonly.aof
+*.rdb
+
+# ============================================
+# RabbitMQ
+# ============================================
+*.rabbitmq
+rabbit@*
+
+# ============================================
+# Service-Specific
+# ============================================
+# API Gateway
+backend/api-gateway/.env
+backend/api-gateway/.env.*
+backend/api-gateway/logs/
+
+# Order Service
+backend/order-service/.env
+backend/order-service/.env.*
+backend/order-service/logs/
+
+# Payment Service
+backend/payment-service/.env
+backend/payment-service/.env.*
+backend/payment-service/logs/
+
+# Notification Service
+backend/notification-service/.env
+backend/notification-service/.env.*
+backend/notification-service/logs/
+
+# Delivery Service
+backend/delivery-service/.env
+backend/delivery-service/.env.*
+backend/delivery-service/logs/
+
+# Restaurant Service
+backend/restaurant-service/.env
+backend/restaurant-service/.env.*
+backend/restaurant-service/logs/
+
+# Auth Service
+backend/auth-service/.env
+backend/auth-service/.env.*
+backend/auth-service/logs/
+
+# ============================================
+# Frontend
+# ============================================
+frontend/.env
+frontend/.env.*
+frontend/build/
+frontend/.cache/
+frontend/public/sw.js
+frontend/public/workbox-*.js
+
+# ============================================
+# Infrastructure
+# ============================================
+infrastructure/k8s/secrets/*.yaml
+infrastructure/k8s/secrets/*.yml
+infrastructure/terraform/.terraform/
+infrastructure/terraform/*.tfplan
+infrastructure/terraform/terraform.tfvars
+infrastructure/terraform/*.tfstate*
+
+# ============================================
+# Documentation
+# ============================================
+docs/_build/
+docs/_site/
+docs/api/_build/
+
+# ============================================
+# Misc
+# ============================================
+*.swp
+*.swo
+*~
+.vimrc
+.zshrc
+.bashrc
+.bash_profile
+.profile
+.config/
+
+# ============================================
+# Package Manager Files
+# ============================================
+package-lock.json.bak
+yarn.lock.bak
+pnpm-lock.yaml.bak
+.npmrc
+.yarnrc
+.pnpmrc
+
+# ============================================
+# Generated Files
+# ============================================
+*_pb2.py
+*_pb2_grpc.py
+*.generated.ts
+*.generated.js
+graphql.schema.json
+graphql.schema.graphql
+
+# ============================================
+# Backup Files
+# ============================================
+*.backup
+*.bkp
+*.old
+*-backup
+
+# ============================================
+# Sentry
+# ============================================
+.sentryclirc
+.sentry-native/
+
+# ============================================
+# ESLint / Prettier
+# ============================================
+.eslintcache
+.prettierignore
+
+# ============================================
+# TypeScript
+# ============================================
+*.tsbuildinfo
+
+# ============================================
+# Local Development
+# ============================================
+local-dev/
+.vagrant/
+.lando/
+.ddev/

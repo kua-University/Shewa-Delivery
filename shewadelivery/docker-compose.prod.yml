@@ -1,0 +1,46 @@
+# docker-compose.prod.yml
+# Production-specific overrides
+
+version: '3.8'
+
+services:
+  api-gateway:
+    build:
+      target: production
+    restart: always
+    environment:
+      - NODE_ENV=production
+      - LOG_LEVEL=info
+    logging:
+      driver: "awslogs"
+      options:
+        awslogs-group: "shewadelivery-api"
+        awslogs-region: "af-south-1"
+        awslogs-stream-prefix: "api-gateway"
+
+  order-service:
+    build:
+      target: production
+    restart: always
+    environment:
+      - NODE_ENV=production
+    logging:
+      driver: "awslogs"
+      options:
+        awslogs-group: "shewadelivery-order"
+        awslogs-region: "af-south-1"
+
+  postgres:
+    restart: always
+    environment:
+      - POSTGRES_PASSWORD_FILE=/run/secrets/db_password
+    secrets:
+      - db_password
+
+  redis:
+    restart: always
+    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes --maxmemory 2gb
+
+secrets:
+  db_password:
+    external: true

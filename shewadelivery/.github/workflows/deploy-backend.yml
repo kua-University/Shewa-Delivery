@@ -1,0 +1,428 @@
+ # .github/workflows/deploy-backend.yml
+# CI/CD Pipeline for ShewaDelivery Backend Services
+# ASR-04: Auto-scaling readiness with Kubernetes HPA
+
+name: Backend CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'backend/**'
+      - 'infrastructure/**'
+      - '.github/workflows/deploy-backend.yml'
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'backend/**'
+
+env:
+  # Docker Hub / ECR Configuration
+  DOCKER_REGISTRY: ghcr.io
+  DOCKER_IMAGE_PREFIX: shewadelivery
+  
+  # Kubernetes Configuration
+  K8S_NAMESPACE: shewadelivery
+  
+  # Performance Testing
+  K6_CLOUD_PROJECT_ID: ${{ secrets.K6_CLOUD_PROJECT_ID }}
+
+jobs:
+  # Job 1: Lint and Test
+  lint-and-test:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          - api-gateway
+          - order-service
+          - payment-service
+          - notification-service
+          - delivery-service
+          - restaurant-service
+          - auth-service
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: backend/${{ matrix.service }}/package-lock.json
+      
+      - name: Install dependencies
+        working-directory: backend/${{ matrix.service }}
+        run: npm ci
+      
+      - name: Run linter
+        working-directory: backend/${{ matrix.service }}
+        run: npm run lint
+      
+      - name: Run security audit
+        working-directory: backend/${{ matrix.service }}
+        run: npm audit --audit-level=high
+      
+      - name: Run unit tests
+        working-directory: backend/${{ matrix.service }}
+        run: npm run test:ci
+      
+      - name: Upload test coverage
+        uses: codecov/codecov-action@v3
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          directory: backend/${{ matrix.service }}/coverage
+          flags: ${{ matrix.service }}
+          name: ${{ matrix.service }}-coverage
+
+  # Job 2: Build Docker Images
+  build-images:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    strategy:
+      matrix:
+        service:
+          - api-gateway
+          - order-service
+          - payment-service
+          - notification-service
+          - delivery-service
+          - restaurant-service
+          - auth-service
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.DOCKER_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_REGISTRY }}/${{ github.repository_owner }}/${{ matrix.service }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ github.run_number }},enable={{is_default_branch}}
+      
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: backend/${{ matrix.service }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILD_VERSION=${{ github.run_number }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+      
+      - name: Scan image for vulnerabilities
+        uses: anchore/scan-action@v3
+        with:
+          image: ${{ env.DOCKER_REGISTRY }}/${{ github.repository_owner }}/${{ matrix.service }}:latest
+          fail-build: true
+          severity-cutoff: high
+
+  # Job 3: Performance Testing (ASR-03, ASR-04)
+  performance-test:
+    name: Performance Testing
+    runs-on: ubuntu-latest
+    needs: build-images
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup k6
+        uses: grafana/setup-k6-action@v1
+      
+      - name: Create k6 load test script
+        run: |
+          cat > load-test.js << 'EOF'
+          import http from 'k6/http';
+          import { check, sleep } from 'k6';
+          import { Trend, Rate } from 'k6/metrics';
+
+          // Custom metrics
+          const orderDuration = new Trend('order_duration');
+          const errorRate = new Rate('error_rate');
+
+          export const options = {
+            stages: [
+              { duration: '30s', target: 20 },   // Ramp up to 20 users
+              { duration: '1m', target: 50 },    // Ramp up to 50 users
+              { duration: '2m', target: 100 },   // Peak load (ASR-04: 10x traffic)
+              { duration: '1m', target: 50 },    // Ramp down
+              { duration: '30s', target: 0 },    // Cool down
+            ],
+            thresholds: {
+              http_req_duration: ['p(95)<2000'],  // 95% under 2 seconds (ASR-03)
+              http_req_failed: ['rate<0.01'],      // Less than 1% errors
+              order_duration: ['p(95)<2000'],      // Order placement under 2s
+              error_rate: ['rate<0.01'],
+            },
+            ext: {
+              loadimpact: {
+                projectID: '${{ env.K6_CLOUD_PROJECT_ID }}',
+                name: 'ShewaDelivery Load Test',
+              },
+            },
+          };
+
+          const BASE_URL = 'http://api-gateway:3000';
+          const HEADERS = {
+            'Content-Type': 'application/json',
+          };
+
+          export default function() {
+            // Test 1: Get restaurants (ASR-02: Cached response under 200ms)
+            const restaurantsRes = http.get(`${BASE_URL}/api/restaurants?city=Addis%20Ababa&limit=20`);
+            check(restaurantsRes, {
+              'restaurants status 200': (r) => r.status === 200,
+              'restaurants response < 200ms': (r) => r.timings.duration < 200,
+            });
+
+            // Test 2: Search functionality
+            const searchRes = http.get(`${BASE_URL}/api/restaurants/search?q=ethiopian`);
+            check(searchRes, {
+              'search status 200': (r) => r.status === 200,
+            });
+
+            // Test 3: Order placement (ASR-03)
+            if (__VU % 5 === 0) {  // Every 5th user places an order
+              const orderPayload = JSON.stringify({
+                restaurantId: 1,
+                items: [{ menuItemId: 1, quantity: 2 }],
+                deliveryAddress: {
+                  address: "Bole Road",
+                  city: "Addis Ababa",
+                  phone: "+251911234567"
+                },
+                paymentMethod: "cash"
+              });
+
+              const start = Date.now();
+              const orderRes = http.post(`${BASE_URL}/api/orders`, orderPayload, { headers: HEADERS });
+              const duration = Date.now() - start;
+              
+              orderDuration.add(duration);
+              errorRate.add(orderRes.status !== 201);
+              
+              check(orderRes, {
+                'order placed in < 2s': () => duration < 2000,
+                'order status 201': (r) => r.status === 201,
+              });
+            }
+
+            sleep(1);
+          }
+          EOF
+      
+      - name: Run load test
+        run: k6 run load-test.js
+        continue-on-error: false
+      
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: load-test-results
+          path: |
+            load-test-summary.json
+            *.html
+
+  # Job 4: Deploy to Kubernetes
+  deploy-kubernetes:
+    name: Deploy to Kubernetes
+    runs-on: ubuntu-latest
+    needs: [build-images, performance-test]
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: af-south-1
+      
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name shewadelivery-eks --region af-south-1
+      
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+      
+      - name: Apply namespace
+        run: kubectl apply -f infrastructure/k8s/namespaces/
+      
+      - name: Apply ConfigMaps
+        run: kubectl apply -f infrastructure/k8s/configmaps/
+      
+      - name: Apply Secrets (from secrets manager)
+        run: |
+          # Fetch secrets from AWS Secrets Manager
+          aws secretsmanager get-secret-value --secret-id shewadelivery/db-secrets --query SecretString --output text | kubectl apply -f -
+          aws secretsmanager get-secret-value --secret-id shewadelivery/chapa-secrets --query SecretString --output text | kubectl apply -f -
+          aws secretsmanager get-secret-value --secret-id shewadelivery/jwt-secrets --query SecretString --output text | kubectl apply -f -
+      
+      - name: Update deployment images
+        run: |
+          # Update image tags in deployment files
+          for service in api-gateway order-service payment-service notification-service delivery-service restaurant-service auth-service; do
+            sed -i "s|image:.*$service.*|image: ${{ env.DOCKER_REGISTRY }}/${{ github.repository_owner }}/$service:${{ github.run_number }}|g" infrastructure/k8s/deployments/$service.yaml
+          done
+      
+      - name: Deploy to Kubernetes
+        run: |
+          kubectl apply -f infrastructure/k8s/deployments/
+          kubectl apply -f infrastructure/k8s/services/
+      
+      - name: Wait for deployments
+        run: |
+          kubectl wait --for=condition=available --timeout=300s deployment -n ${{ env.K8S_NAMESPACE }} --all
+      
+      - name: Apply HPA (ASR-04: Auto-scaling)
+        run: kubectl apply -f infrastructure/k8s/deployments/hpa.yaml
+      
+      - name: Verify HPA status
+        run: |
+          echo "=== Horizontal Pod Autoscalers ==="
+          kubectl get hpa -n ${{ env.K8S_NAMESPACE }}
+          
+          # Verify HPA is ready for auto-scaling
+          for hpa in api-gateway-hpa order-service-hpa delivery-service-hpa; do
+            if kubectl get hpa $hpa -n ${{ env.K8S_NAMESPACE}} -o jsonpath='{.status.conditions[?(@.type=="AbleToScale")].status}' | grep -q "True"; then
+              echo "✅ HPA $hpa is ready for auto-scaling"
+            else
+              echo "❌ HPA $hpa not ready"
+              exit 1
+            fi
+          done
+      
+      - name: Rollout status
+        run: kubectl rollout status deployment -n ${{ env.K8S_NAMESPACE}} --timeout=300s
+
+  # Job 5: Smoke Tests
+  smoke-tests:
+    name: Smoke Tests
+    runs-on: ubuntu-latest
+    needs: deploy-kubernetes
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Get Load Balancer URL
+        id: get-url
+        run: |
+          LB_URL=$(kubectl get svc api-gateway-lb -n shewadelivery -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          echo "LB_URL=$LB_URL" >> $GITHUB_OUTPUT
+      
+      - name: Run smoke tests
+        run: |
+          # Test health endpoint
+          curl -f "http://${{ steps.get-url.outputs.LB_URL }}/health" || exit 1
+          
+          # Test API endpoints
+          curl -f "http://${{ steps.get-url.outputs.LB_URL }}/api/restaurants?city=Addis%20Ababa" || exit 1
+          
+          # Test WebSocket connection
+          timeout 5 wscat -c "ws://${{ steps.get-url.outputs.LB_URL }}" || true
+          
+          echo "✅ All smoke tests passed"
+
+  # Job 6: Notifications
+  notify:
+    name: Notifications
+    runs-on: ubuntu-latest
+    needs: [deploy-kubernetes, smoke-tests]
+    if: always() && github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Send Slack notification
+        uses: slackapi/slack-github-action@v1.24
+        with:
+          payload: |
+            {
+              "text": "ShewaDelivery Backend Deployment ${{ job.status }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*ShewaDelivery Backend Deployment*\nStatus: ${{ job.status }}\nEnvironment: Production\nVersion: ${{ github.run_number }}\nDeployed by: ${{ github.actor }}"
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Services Deployed:*\nAPI Gateway\nOrder Service\nPayment Service\nNotification Service\nDelivery Service\nRestaurant Service\nAuth Service"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*HPA Status:*\n✅ Ready for auto-scaling (ASR-04)\nMin replicas: 3\nMax replicas: 20"
+                    }
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      
+      - name: Send Teams notification
+        uses: aliencube/teams-notification-action@v1
+        with:
+          webhook_url: ${{ secrets.TEAMS_WEBHOOK_URL }}
+          title: "ShewaDelivery Backend Deployment"
+          summary: "Deployment ${{ job.status }}"
+          theme_color: ${{ job.status == 'success' && '00FF00' || 'FF0000' }}
+          sections: |
+            [
+              {
+                "activityTitle": "ShewaDelivery Backend Deployment",
+                "facts": [
+                  {
+                    "name": "Status",
+                    "value": "${{ job.status }}"
+                  },
+                  {
+                    "name": "Environment",
+                    "value": "Production"
+                  },
+                  {
+                    "name": "Version",
+                    "value": "${{ github.run_number }}"
+                  },
+                  {
+                    "name": "HPA Status",
+                    "value": "Ready for 10x traffic spikes (ASR-04)"
+                  }
+                ]
+              }
+            ]

@@ -1,0 +1,127 @@
+ <!-- frontend/public/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#FF6B35" />
+    <meta name="description" content="ShewaDelivery - Ethiopia's #1 Food Delivery Platform" />
+    
+    <!-- Primary Meta Tags -->
+    <title>ShewaDelivery - Food Delivery in Ethiopia</title>
+    <meta name="title" content="ShewaDelivery - Food Delivery in Ethiopia" />
+    <meta name="description" content="Order food from your favorite restaurants in Addis Ababa, Bahir Dar, and other Ethiopian cities. Fast delivery, best prices!" />
+    
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://shewadelivery.com/" />
+    <meta property="og:title" content="ShewaDelivery - Food Delivery in Ethiopia" />
+    <meta property="og:description" content="Order food from your favorite restaurants in Ethiopia. Fast delivery, best prices!" />
+    <meta property="og:image" content="https://shewadelivery.com/og-image.jpg" />
+    
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image" />
+    <meta property="twitter:url" content="https://shewadelivery.com/" />
+    <meta property="twitter:title" content="ShewaDelivery - Food Delivery in Ethiopia" />
+    <meta property="twitter:description" content="Order food from your favorite restaurants in Ethiopia. Fast delivery, best prices!" />
+    <meta property="twitter:image" content="https://shewadelivery.com/og-image.jpg" />
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/logo192.png" />
+    <link rel="manifest" href="/manifest.json" />
+    
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Ethiopic:wght@400;500;700&display=swap" rel="stylesheet" />
+    
+    <!-- PWA Support -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="ShewaDelivery" />
+    
+    <!-- Preload critical assets -->
+    <link rel="preload" href="/logo.svg" as="image" />
+    
+    <style>
+      /* Critical CSS for initial render */
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      
+      body {
+        font-family: 'Inter', 'Noto Sans Ethiopic', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        background-color: #f5f5f5;
+        color: #333;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+      
+      #root {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+      
+      /* Loading spinner */
+      .loading-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        background: linear-gradient(135deg, #FF6B35 0%, #FF8C42 100%);
+      }
+      
+      .loading-spinner {
+        width: 50px;
+        height: 50px;
+        border: 4px solid rgba(255, 255, 255, 0.3);
+        border-top-color: white;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+      
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+      
+      /* RTL Support for Amharic */
+      [dir="rtl"] {
+        font-family: 'Noto Sans Ethiopic', 'Inter', sans-serif;
+      }
+      
+      /* Responsive container */
+      .container {
+        width: 100%;
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 0 16px;
+      }
+      
+      @media (max-width: 768px) {
+        .container {
+          padding: 0 12px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <noscript>
+      <div style="text-align: center; padding: 50px;">
+        <h1>JavaScript Required</h1>
+        <p>ShewaDelivery requires JavaScript to run. Please enable JavaScript in your browser settings.</p>
+      </div>
+    </noscript>
+    
+    <div id="root">
+      <div class="loading-container">
+        <div class="loading-spinner"></div>
+      </div>
+    </div>
+    
+    <!-- Main script will be injected by React -->
+  </body>
+</html>

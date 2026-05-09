@@ -1,0 +1,12 @@
+# terraform/terraform.tfvars.example
+aws_region   = "af-south-1"
+environment  = "production"
+
+db_username    = "shewa"
+db_password    = "YourSecurePasswordHere!"
+
+docdb_username = "shewa"
+docdb_password = "YourSecurePasswordHere!"
+
+rabbitmq_username = "shewa"
+rabbitmq_password = "YourSecurePasswordHere!"

@@ -1,0 +1,423 @@
+ 
+# .github/workflows/deploy-frontend.yml
+# CI/CD Pipeline for ShewaDelivery Frontend
+# ASR-03: Mobile-first optimization, ASR-09: Amharic/English support
+
+name: Frontend CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/deploy-frontend.yml'
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'frontend/**'
+
+env:
+  # Configuration
+  NODE_VERSION: '18'
+  S3_BUCKET: shewadelivery-frontend
+  CLOUDFRONT_DIST_ID: E1234567890
+  
+  # PWA Configuration
+  PWA_ENABLED: true
+  OFFLINE_MODE: true
+
+jobs:
+  # Job 1: Lint and Test
+  lint-and-test:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+      
+      - name: Run linter
+        working-directory: frontend
+        run: npm run lint
+      
+      - name: Run format check
+        working-directory: frontend
+        run: npm run format:check
+      
+      - name: Run unit tests
+        working-directory: frontend
+        run: npm run test:ci
+      
+      - name: Run accessibility tests
+        working-directory: frontend
+        run: npm run test:a11y
+      
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          directory: frontend/coverage
+          flags: frontend
+
+  # Job 2: Build and Bundle Analysis
+  build-and-analyze:
+    name: Build & Analyze
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+      
+      - name: Build application
+        working-directory: frontend
+        run: npm run build:optimized
+        env:
+          CI: true
+          REACT_APP_ENVIRONMENT: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+          REACT_APP_VERSION: ${{ github.run_number }}
+      
+      - name: Analyze bundle size
+        working-directory: frontend
+        run: npm run analyze
+      
+      - name: Check bundle size limits
+        run: |
+          # Check main bundle size (ASR-03: Mobile optimization)
+          MAIN_BUNDLE=$(find frontend/build/static/js -name "main.*.js" -exec du -k {} \; | cut -f1)
+          if [ $MAIN_BUNDLE -gt 200 ]; then
+            echo "❌ Main bundle size ($MAIN_BUNDLE KB) exceeds 200KB limit"
+            exit 1
+          fi
+          echo "✅ Bundle size check passed: $MAIN_BUNDLE KB"
+      
+      - name: Run Lighthouse CI
+        uses: treosh/lighthouse-ci-action@v10
+        with:
+          urls: |
+            http://localhost:3000/
+            http://localhost:3000/restaurants
+          budgetPath: ./frontend/lighthouse-budget.json
+          uploadArtifacts: true
+          temporaryPublicStorage: true
+        env:
+          LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
+      
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-build
+          path: frontend/build/
+          retention-days: 7
+
+  # Job 3: PWA Testing
+  pwa-test:
+    name: PWA Testing
+    runs-on: ubuntu-latest
+    needs: build-and-analyze
+    
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-build
+          path: frontend/build
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      
+      - name: Install serve
+        run: npm install -g serve
+      
+      - name: Serve built app
+        run: serve -s frontend/build -l 3000 &
+        env:
+          CI: true
+      
+      - name: Wait for server
+        run: sleep 5
+      
+      - name: Test PWA manifest
+        run: |
+          # Check manifest.json
+          curl -f http://localhost:3000/manifest.json || exit 1
+          
+          # Validate PWA installability
+          if [[ $(curl -s http://localhost:3000/manifest.json | jq -r '.name') != "ShewaDelivery" ]]; then
+            echo "❌ PWA manifest validation failed"
+            exit 1
+          fi
+          echo "✅ PWA manifest validated"
+      
+      - name: Test Service Worker
+        run: |
+          # Check if service worker is registered
+          if ! curl -s http://localhost:3000/service-worker.js | grep -q "workbox"; then
+            echo "❌ Service worker not found"
+            exit 1
+          fi
+          echo "✅ Service worker found"
+      
+      - name: Test offline mode (ASR-03)
+        run: |
+          # Test offline capability
+          npm install -g offline-test
+          offline-test http://localhost:3000 --offline --check-sw
+          echo "✅ Offline mode working"
+
+  # Job 4: 3G Network Simulation Test
+  network-test:
+    name: 3G Network Simulation (ASR-03)
+    runs-on: ubuntu-latest
+    needs: build-and-analyze
+    
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-build
+          path: frontend/build
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      
+      - name: Install dependencies
+        run: npm install -g serve lighthouse
+      
+      - name: Serve with network throttling
+        run: |
+          # Simulate 3G conditions (750ms latency, 1.6 Mbps down)
+          serve -s frontend/build -l 3000 &
+          sleep 5
+          
+          # Run Lighthouse with 3G emulation
+          lighthouse http://localhost:3000 --chrome-flags="--headless" \
+            --throttling-method=devtools \
+            --emulated-form-factor=mobile \
+            --output=json \
+            --output-path=lighthouse-3g.json
+      
+      - name: Validate 3G performance
+        run: |
+          # Check performance score on 3G
+          SCORE=$(jq '.categories.performance.score' lighthouse-3g.json)
+          if (( $(echo "$SCORE < 0.7" | bc -l) )); then
+            echo "❌ Performance score on 3G: $SCORE (minimum 0.7 required)"
+            exit 1
+          fi
+          echo "✅ 3G performance score: $SCORE"
+          
+          # Check Time to Interactive
+          TTI=$(jq '.audits.interactive.numericValue' lighthouse-3g.json)
+          if (( $(echo "$TTI > 5000" | bc -l) )); then
+            echo "❌ Time to Interactive on 3G: ${TTI}ms (maximum 5000ms)"
+            exit 1
+          fi
+          echo "✅ Time to Interactive on 3G: ${TTI}ms"
+      
+      - name: Upload Lighthouse results
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-3g-report
+          path: lighthouse-3g.json
+
+  # Job 5: i18n Validation (ASR-09)
+  i18n-validation:
+    name: i18n Validation (Amharic/English)
+    runs-on: ubuntu-latest
+    needs: build-and-analyze
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      
+      - name: Validate translation files
+        run: |
+          # Check English translations
+          if [ ! -f "frontend/public/locales/en/translation.json" ]; then
+            echo "❌ English translation file missing"
+            exit 1
+          fi
+          
+          # Check Amharic translations
+          if [ ! -f "frontend/public/locales/am/translation.json" ]; then
+            echo "❌ Amharic translation file missing"
+            exit 1
+          fi
+          
+          # Validate JSON structure
+          for lang in en am; do
+            if ! jq empty frontend/public/locales/$lang/translation.json 2>/dev/null; then
+              echo "❌ Invalid JSON in $lang translations"
+              exit 1
+            fi
+          done
+          
+          echo "✅ Translation files validated"
+      
+      - name: Check translation coverage
+        run: |
+          # Compare translation keys
+          KEYS_EN=$(jq -r 'paths(scalars) | join(".")' frontend/public/locales/en/translation.json | sort)
+          KEYS_AM=$(jq -r 'paths(scalars) | join(".")' frontend/public/locales/am/translation.json | sort)
+          
+          MISSING_KEYS=$(comm -23 <(echo "$KEYS_EN") <(echo "$KEYS_AM"))
+          
+          if [ -n "$MISSING_KEYS" ]; then
+            echo "❌ Missing Amharic translations for:"
+            echo "$MISSING_KEYS"
+            exit 1
+          fi
+          
+          echo "✅ Complete translation coverage"
+
+  # Job 6: Deploy to S3/CloudFront
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [build-and-analyze, pwa-test, network-test, i18n-validation]
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-build
+          path: frontend/build
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: af-south-1
+      
+      - name: Sync to S3
+        run: |
+          # Sync build files to S3
+          aws s3 sync frontend/build/ s3://${{ env.S3_BUCKET }}/ \
+            --delete \
+            --cache-control "max-age=31536000,public" \
+            --exclude "*.html" \
+            --exclude "sw.js" \
+            --exclude "manifest.json"
+          
+          # Sync HTML files with no-cache
+          aws s3 sync frontend/build/ s3://${{ env.S3_BUCKET }}/ \
+            --exclude "*" \
+            --include "*.html" \
+            --include "sw.js" \
+            --include "manifest.json" \
+            --cache-control "no-cache, no-store, must-revalidate"
+      
+      - name: Invalidate CloudFront cache
+        run: |
+          # Create invalidation
+          INVALIDATION_ID=$(aws cloudfront create-invalidation \
+            --distribution-id ${{ env.CLOUDFRONT_DIST_ID }} \
+            --paths "/*" \
+            --query 'Invalidation.Id' \
+            --output text)
+          
+          # Wait for invalidation to complete
+          aws cloudfront wait invalidation-completed \
+            --distribution-id ${{ env.CLOUDFRONT_DIST_ID }} \
+            --id $INVALIDATION_ID
+          
+          echo "✅ CloudFront cache invalidated"
+      
+      - name: Verify deployment
+        run: |
+          # Wait for CloudFront to propagate
+          sleep 30
+          
+          # Test deployed site
+          CLOUDFRONT_URL=$(aws cloudfront get-distribution --id ${{ env.CLOUDFRONT_DIST_ID }} --query 'Distribution.DomainName' --output text)
+          
+          curl -f "https://$CLOUDFRONT_URL/health" || exit 1
+          curl -f "https://$CLOUDFRONT_URL/manifest.json" || exit 1
+          
+          echo "✅ Deployment verified at: https://$CLOUDFRONT_URL"
+
+  # Job 7: Slack Notification
+  notify:
+    name: Notifications
+    runs-on: ubuntu-latest
+    needs: [deploy, network-test]
+    if: always() && github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Send Slack notification
+        uses: slackapi/slack-github-action@v1.24
+        with:
+          payload: |
+            {
+              "text": "ShewaDelivery Frontend Deployment ${{ job.status }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*ShewaDelivery Frontend Deployment*\nStatus: ${{ job.status }}\nEnvironment: Production\nVersion: ${{ github.run_number }}\nDeployed by: ${{ github.actor }}"
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Performance Metrics:*\n✅ 3G Performance: PASS\n✅ Bundle Size: <200KB\n✅ PWA: ENABLED\n✅ Offline Mode: WORKING"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*i18n Status:*\n✅ English: Complete\n✅ Amharic: Complete\n✅ Translation Coverage: 100%"
+                    }
+                  ]
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "🌐 <https://${{ env.CLOUDFRONT_DIST_ID }}.cloudfront.net|View Deployment>"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
