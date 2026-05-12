@@ -1,26 +1,6 @@
  
 # ShewaDelivery - Ethiopia's #1 Food Delivery Platform
 
-![ShewaDelivery Logo](https://shewadelivery.com/logo.png)
-
-[![CI/CD](https://github.com/shewadelivery/platform/actions/workflows/deploy-backend.yml/badge.svg)](https://github.com/shewadelivery/platform/actions/workflows/deploy-backend.yml)
-[![Coverage](https://codecov.io/gh/shewadelivery/platform/branch/main/graph/badge.svg)](https://codecov.io/gh/shewadelivery/platform)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
-
-## 📋 Table of Contents
-
-- [Overview](#overview)
-- [Architecture](#architecture)
-- [Features](#features)
-- [Tech Stack](#tech-stack)
-- [Getting Started](#getting-started)
-- [Development](#development)
-- [Testing](#testing)
-- [Deployment](#deployment)
-- [API Documentation](#api-documentation)
-- [Contributing](#contributing)
-- [License](#license)
 
 ## 🚀 Overview
 
